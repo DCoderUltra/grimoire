@@ -92,9 +92,18 @@ pub fn extract_pdf_text(path: &Path) -> Option<String> {
     }
 
     let doc = Document::load(path).ok()?;
-    let page_numbers: Vec<u32> = doc.get_pages().keys().copied().take(MAX_PAGES as usize).collect();
+    let page_numbers: Vec<u32> = doc
+        .get_pages()
+        .keys()
+        .copied()
+        .take(MAX_PAGES as usize)
+        .collect();
     let text = doc.extract_text(&page_numbers).ok()?;
-    if text.trim().is_empty() { None } else { Some(text) }
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 fn parse_authors(raw: &str) -> Vec<String> {

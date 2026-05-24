@@ -25,7 +25,8 @@ pub fn detect_arxiv_id(input: &str) -> Option<String> {
 
 pub fn detect_doi(input: &str) -> Option<String> {
     let re = Regex::new(r"(10\.\d{4,9}/[^\s]+)").unwrap();
-    re.captures(input).map(|c| c.get(1).unwrap().as_str().to_string())
+    re.captures(input)
+        .map(|c| c.get(1).unwrap().as_str().to_string())
 }
 
 pub fn fetch_arxiv(arxiv_id: &str) -> Result<Reference> {
@@ -56,7 +57,10 @@ pub fn search_crossref_by_title(title: &str) -> Result<Reference> {
     );
     let body = reqwest::blocking::Client::new()
         .get(&url)
-        .header("User-Agent", "Grimoire/0.1 (reference manager; mailto:jrfetzer@gmail.com)")
+        .header(
+            "User-Agent",
+            "Grimoire/0.1 (reference manager; mailto:jrfetzer@gmail.com)",
+        )
         .send()
         .context("Failed to reach CrossRef API")?
         .text()?;
@@ -101,7 +105,10 @@ pub fn fetch_crossref(doi: &str) -> Result<Reference> {
     let url = format!("https://api.crossref.org/works/{}", doi);
     let body = reqwest::blocking::Client::new()
         .get(&url)
-        .header("User-Agent", "Grimoire/0.1 (reference manager; mailto:jrfetzer@gmail.com)")
+        .header(
+            "User-Agent",
+            "Grimoire/0.1 (reference manager; mailto:jrfetzer@gmail.com)",
+        )
         .send()
         .context("Failed to reach CrossRef API")?
         .text()?;
@@ -110,8 +117,8 @@ pub fn fetch_crossref(doi: &str) -> Result<Reference> {
 }
 
 fn parse_arxiv_response(xml: &str, arxiv_id: &str) -> Result<Reference> {
-    use quick_xml::events::Event;
     use quick_xml::Reader;
+    use quick_xml::events::Event;
 
     let mut reader = Reader::from_str(xml);
     let mut buf = Vec::new();
@@ -168,10 +175,16 @@ fn parse_arxiv_response(xml: &str, arxiv_id: &str) -> Result<Reference> {
         buf.clear();
     }
 
-    let year = published.as_deref().and_then(|p| p.get(..4)?.parse::<u16>().ok());
+    let year = published
+        .as_deref()
+        .and_then(|p| p.get(..4)?.parse::<u16>().ok());
 
     let title = title.context("No title found in arXiv response")?;
-    let title = title.replace('\n', " ").split_whitespace().collect::<Vec<_>>().join(" ");
+    let title = title
+        .replace('\n', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
 
     let abstract_text = abstract_text.map(|a| clean_abstract(&a));
 

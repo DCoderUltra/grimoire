@@ -22,20 +22,20 @@ pub struct Theme {
 
 fn default_theme() -> Theme {
     Theme {
-        text: Color::Rgb(200, 211, 245),       // #c8d3f5 — fg
-        text_dim: Color::Rgb(130, 139, 184),   // #828bb8 — fg_dark
-        text_muted: Color::Rgb(59, 66, 97),    // #3b4261 — fg_gutter
+        text: Color::Rgb(200, 211, 245),        // #c8d3f5 — fg
+        text_dim: Color::Rgb(130, 139, 184),    // #828bb8 — fg_dark
+        text_muted: Color::Rgb(59, 66, 97),     // #3b4261 — fg_gutter
         author: Color::Rgb(192, 153, 255),      // #c099ff — magenta
-        highlight: Color::Rgb(255, 199, 119),  // #ffc777 — yellow
-        link: Color::Rgb(130, 170, 255),       // #82aaff — blue
-        date: Color::Rgb(195, 232, 141),       // #c3e88d — green
-        border: Color::Rgb(59, 66, 97),        // #3b4261 — fg_gutter
-        selection: Color::Rgb(47, 51, 77),     // #2f334d — bg_highlight
-        popup_bg: Color::Rgb(30, 32, 48),      // #1e2030 — ui.popup bg
+        highlight: Color::Rgb(255, 199, 119),   // #ffc777 — yellow
+        link: Color::Rgb(130, 170, 255),        // #82aaff — blue
+        date: Color::Rgb(195, 232, 141),        // #c3e88d — green
+        border: Color::Rgb(59, 66, 97),         // #3b4261 — fg_gutter
+        selection: Color::Rgb(47, 51, 77),      // #2f334d — bg_highlight
+        popup_bg: Color::Rgb(30, 32, 48),       // #1e2030 — ui.popup bg
         popup_border: Color::Rgb(88, 158, 215), // #589ed7 — border_highlight
-        normal_bg: Color::Rgb(130, 170, 255),  // #82aaff — blue
-        insert_bg: Color::Rgb(195, 232, 141),  // #c3e88d — green
-        status_fg: Color::Rgb(27, 29, 43),     // #1b1d2b — black
+        normal_bg: Color::Rgb(130, 170, 255),   // #82aaff — blue
+        insert_bg: Color::Rgb(195, 232, 141),   // #c3e88d — green
+        status_fg: Color::Rgb(27, 29, 43),      // #1b1d2b — black
     }
 }
 

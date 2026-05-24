@@ -18,7 +18,11 @@ impl ValidateResult {
         } else if self.fixed > 0 && self.issues.is_empty() {
             format!("Fixed {} issues", self.fixed)
         } else if self.fixed > 0 {
-            format!("{} issues, fixed {}", self.issues.len() + self.fixed, self.fixed)
+            format!(
+                "{} issues, fixed {}",
+                self.issues.len() + self.fixed,
+                self.fixed
+            )
         } else {
             format!("{} issues found", self.issues.len())
         }
@@ -32,7 +36,11 @@ pub fn validate(library: &Path, fix: bool) -> Result<ValidateResult> {
     let mut fixed = 0u32;
 
     for ref_dir in &dirs {
-        let dir_name = ref_dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let dir_name = ref_dir
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
 
         let toml_path = ref_dir.join("info.toml");
         let content = std::fs::read_to_string(&toml_path)?;
@@ -55,10 +63,7 @@ pub fn validate(library: &Path, fix: bool) -> Result<ValidateResult> {
             } else if !is_pdf(&file_path) {
                 if fix {
                     std::fs::remove_file(&file_path)?;
-                    let new_content = content.replace(
-                        &format!("\"{}\"", listed_file),
-                        "",
-                    );
+                    let new_content = content.replace(&format!("\"{}\"", listed_file), "");
                     let new_content = new_content.replace("files = [\n    \n]", "files = []");
                     std::fs::write(&toml_path, &new_content)?;
                     fixed += 1;
@@ -68,13 +73,12 @@ pub fn validate(library: &Path, fix: bool) -> Result<ValidateResult> {
             }
         }
 
-        let has_pdf = std::fs::read_dir(ref_dir)?
-            .filter_map(|e| e.ok())
-            .any(|e| {
-                let p = e.path();
-                p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
-                    && is_pdf(&p)
-            });
+        let has_pdf = std::fs::read_dir(ref_dir)?.filter_map(|e| e.ok()).any(|e| {
+            let p = e.path();
+            p.extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
+                && is_pdf(&p)
+        });
 
         if !has_pdf && reference.files.is_empty() {
             issues.push(format!("no PDF: {}", dir_name));
@@ -87,10 +91,8 @@ pub fn validate(library: &Path, fix: bool) -> Result<ValidateResult> {
                     let proper = format!("{}.pdf", dir_name);
                     let new_path = ref_dir.join(&proper);
                     std::fs::rename(entry.path(), &new_path)?;
-                    let new_content = content.replace(
-                        &format!("\"{}\"", fname),
-                        &format!("\"{}\"", proper),
-                    );
+                    let new_content =
+                        content.replace(&format!("\"{}\"", fname), &format!("\"{}\"", proper));
                     std::fs::write(&toml_path, &new_content)?;
                     fixed += 1;
                 } else {
@@ -121,7 +123,9 @@ pub fn run(library: &Path, fix: bool) -> Result<()> {
 }
 
 fn is_pdf(path: &Path) -> bool {
-    let Ok(mut file) = std::fs::File::open(path) else { return false };
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return false;
+    };
     let mut buf = [0u8; 4];
     use std::io::Read;
     if file.read_exact(&mut buf).is_err() {

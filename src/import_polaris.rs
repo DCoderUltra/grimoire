@@ -19,7 +19,11 @@ pub fn run(library: &Path, force: bool) -> Result<()> {
     let db_path = polaris_dir.join("library.db");
     let docs_dir = polaris_dir.join("Documents");
 
-    anyhow::ensure!(db_path.exists(), "Polaris database not found at {}", db_path.display());
+    anyhow::ensure!(
+        db_path.exists(),
+        "Polaris database not found at {}",
+        db_path.display()
+    );
 
     let conn = Connection::open(&db_path)?;
     let records = read_records(&conn)?;
@@ -32,11 +36,12 @@ pub fn run(library: &Path, force: bool) -> Result<()> {
     std::fs::create_dir_all(library)?;
 
     let existing = storage::list_ref_dirs(library)?;
-    let existing_map: std::collections::HashMap<String, PathBuf> = existing.iter()
+    let existing_map: std::collections::HashMap<String, PathBuf> = existing
+        .iter()
         .filter_map(|dir| {
-            metadata::read_info(dir).ok().and_then(|r| {
-                r.files.first().map(|f| (f.clone(), dir.clone()))
-            })
+            metadata::read_info(dir)
+                .ok()
+                .and_then(|r| r.files.first().map(|f| (f.clone(), dir.clone())))
         })
         .collect();
 
@@ -46,9 +51,15 @@ pub fn run(library: &Path, force: bool) -> Result<()> {
     for record in &records {
         if let Some(existing_dir) = existing_map.get(&record.filename) {
             if force {
-                let authors: Vec<String> = record.author
+                let authors: Vec<String> = record
+                    .author
                     .as_deref()
-                    .map(|a| a.split(';').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+                    .map(|a| {
+                        a.split(';')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    })
                     .unwrap_or_default();
 
                 let mut reference = metadata::read_info(existing_dir)?;
@@ -71,9 +82,15 @@ pub fn run(library: &Path, force: bool) -> Result<()> {
             continue;
         }
 
-        let authors: Vec<String> = record.author
+        let authors: Vec<String> = record
+            .author
             .as_deref()
-            .map(|a| a.split(';').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+            .map(|a| {
+                a.split(';')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
             .unwrap_or_default();
 
         let reference = Reference {

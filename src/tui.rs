@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::ExecutableCommand;
 use crossterm::cursor::Show;
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::style::ResetColor;
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::ExecutableCommand;
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use ratatui::backend::CrosstermBackend;
@@ -146,7 +146,10 @@ impl TagPopup {
             self.filtered_tags = tags;
         } else {
             let f = self.filter.to_lowercase();
-            self.filtered_tags = tags.into_iter().filter(|t| t.to_lowercase().contains(&f)).collect();
+            self.filtered_tags = tags
+                .into_iter()
+                .filter(|t| t.to_lowercase().contains(&f))
+                .collect();
         }
         if self.selected >= self.filtered_tags.len() {
             self.selected = self.filtered_tags.len().saturating_sub(1);
@@ -301,7 +304,14 @@ pub fn browse(config: &AppConfig, library: &Path, initial_query: Option<&str>) -
 }
 
 pub fn cite(config: &AppConfig, library: &Path, format: &str) -> Result<()> {
-    let app = App::new(config, library, Mode::Cite { format: format.to_string() }, None)?;
+    let app = App::new(
+        config,
+        library,
+        Mode::Cite {
+            format: format.to_string(),
+        },
+        None,
+    )?;
     if app.entries.is_empty() {
         anyhow::bail!("Library is empty");
     }
@@ -359,7 +369,8 @@ fn run_event_loop(terminal: &mut Term, app: &mut App, tty_ctl: &mut File) -> Res
                 Ok(items) => {
                     app.enrich_rx = None;
                     if items.is_empty() {
-                        app.flash = Some(("Nothing to enrich".to_string(), std::time::Instant::now()));
+                        app.flash =
+                            Some(("Nothing to enrich".to_string(), std::time::Instant::now()));
                     } else {
                         let mut queue = items;
                         let (idx, updated, diffs) = queue.remove(0);
@@ -428,13 +439,41 @@ fn run_event_loop(terminal: &mut Term, app: &mut App, tty_ctl: &mut File) -> Res
 
             if app.add_input.is_some() {
                 match key.code {
-                    KeyCode::Esc => { app.add_input = None; }
-                    KeyCode::Enter => { app.submit_add(); }
-                    KeyCode::Backspace => {
-                        if let Some(ref mut s) = app.add_input { s.pop(); }
+                    KeyCode::Esc => {
+                        app.add_input = None;
                     }
-                    KeyCode::Char(c) => {
-                        if let Some(ref mut s) = app.add_input { s.push(c); }
+                    KeyCode::Enter => {
+                        app.submit_add();
+                    }
+                    KeyCode::Tab => {
+                        if let Some(text) = app.add_input.take() {
+                            app.filter = text;
+                            app.rebuild_filter();
+                        }
+                        app.input_mode = InputMode::Search;
+                    }
+                    KeyCode::Char('a')
+                        if key.modifiers.contains(KeyModifiers::ALT)
+                            || key.modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        if let Some(text) = app.add_input.take() {
+                            app.filter = text;
+                            app.rebuild_filter();
+                        }
+                        app.input_mode = InputMode::Search;
+                    }
+                    KeyCode::Backspace => {
+                        if let Some(ref mut s) = app.add_input {
+                            s.pop();
+                        }
+                    }
+                    KeyCode::Char(c)
+                        if !key.modifiers.contains(KeyModifiers::CONTROL)
+                            && !key.modifiers.contains(KeyModifiers::ALT) =>
+                    {
+                        if let Some(ref mut s) = app.add_input {
+                            s.push(c);
+                        }
                     }
                     _ => {}
                 }
@@ -519,7 +558,9 @@ fn run_event_loop(terminal: &mut Term, app: &mut App, tty_ctl: &mut File) -> Res
 
             if app.theme_popup.is_some() {
                 match key.code {
-                    KeyCode::Esc => { app.theme_popup = None; }
+                    KeyCode::Esc => {
+                        app.theme_popup = None;
+                    }
                     KeyCode::Up | KeyCode::Char('k') => {
                         app.theme_popup.as_mut().unwrap().move_up();
                         if let Some(name) = app.theme_popup.as_ref().unwrap().selected_name() {
@@ -549,6 +590,15 @@ fn run_event_loop(terminal: &mut Term, app: &mut App, tty_ctl: &mut File) -> Res
                     }
                     (KeyCode::Char('c'), KeyModifiers::CONTROL) => app.should_quit = true,
 
+                    (KeyCode::Char('a'), KeyModifiers::ALT)
+                    | (KeyCode::Char('a'), KeyModifiers::CONTROL)
+                    | (KeyCode::Tab, _) => {
+                        app.add_input = Some(app.filter.clone());
+                        app.filter.clear();
+                        app.rebuild_filter();
+                        app.input_mode = InputMode::Browse;
+                    }
+
                     (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                         app.filter.push(c);
                         app.rebuild_filter();
@@ -558,15 +608,20 @@ fn run_event_loop(terminal: &mut Term, app: &mut App, tty_ctl: &mut File) -> Res
                         app.rebuild_filter();
                     }
 
-                    (KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => app.move_up(),
-                    (KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => app.move_down(),
+                    (KeyCode::Up, _)
+                    | (KeyCode::Char('p'), KeyModifiers::CONTROL)
+                    | (KeyCode::Char('k'), KeyModifiers::CONTROL) => app.move_up(),
+                    (KeyCode::Down, _)
+                    | (KeyCode::Char('n'), KeyModifiers::CONTROL)
+                    | (KeyCode::Char('j'), KeyModifiers::CONTROL) => app.move_down(),
                     (KeyCode::Char('d'), KeyModifiers::CONTROL) => app.half_page_down(),
                     (KeyCode::Char('u'), KeyModifiers::CONTROL) => app.half_page_up(),
                     (KeyCode::Char('f'), KeyModifiers::CONTROL) => app.page_down(),
                     (KeyCode::Char('b'), KeyModifiers::CONTROL) => app.page_up(),
 
-                    (KeyCode::Tab, _) => {
-                        app.tag_popup = Some(TagPopup::new(&app.all_tags, &app.entries, &app.tag_filter));
+                    (KeyCode::Char('t'), KeyModifiers::CONTROL) => {
+                        app.tag_popup =
+                            Some(TagPopup::new(&app.all_tags, &app.entries, &app.tag_filter));
                     }
 
                     (KeyCode::Enter, _) => {
@@ -588,10 +643,12 @@ fn run_event_loop(terminal: &mut Term, app: &mut App, tty_ctl: &mut File) -> Res
 
                     (KeyCode::Char('j'), KeyModifiers::NONE)
                     | (KeyCode::Down, _)
-                    | (KeyCode::Char('n'), KeyModifiers::CONTROL) => app.move_down(),
+                    | (KeyCode::Char('n'), KeyModifiers::CONTROL)
+                    | (KeyCode::Char('j'), KeyModifiers::CONTROL) => app.move_down(),
                     (KeyCode::Char('k'), KeyModifiers::NONE)
                     | (KeyCode::Up, _)
-                    | (KeyCode::Char('p'), KeyModifiers::CONTROL) => app.move_up(),
+                    | (KeyCode::Char('p'), KeyModifiers::CONTROL)
+                    | (KeyCode::Char('k'), KeyModifiers::CONTROL) => app.move_up(),
                     (KeyCode::Char('d'), KeyModifiers::CONTROL) => app.half_page_down(),
                     (KeyCode::Char('u'), KeyModifiers::CONTROL) => app.half_page_up(),
                     (KeyCode::Char('f'), KeyModifiers::CONTROL) => app.page_down(),
@@ -602,7 +659,8 @@ fn run_event_loop(terminal: &mut Term, app: &mut App, tty_ctl: &mut File) -> Res
                     }
 
                     (KeyCode::Char('t'), KeyModifiers::NONE) => {
-                        app.tag_popup = Some(TagPopup::new(&app.all_tags, &app.entries, &app.tag_filter));
+                        app.tag_popup =
+                            Some(TagPopup::new(&app.all_tags, &app.entries, &app.tag_filter));
                     }
                     (KeyCode::Char('T'), KeyModifiers::SHIFT | KeyModifiers::NONE) => {
                         app.theme_popup = Some(ThemePopup::new());
@@ -671,7 +729,12 @@ fn run_event_loop(terminal: &mut Term, app: &mut App, tty_ctl: &mut File) -> Res
 }
 
 impl App {
-    fn new(config: &AppConfig, library: &Path, mode: Mode, initial_query: Option<&str>) -> Result<Self> {
+    fn new(
+        config: &AppConfig,
+        library: &Path,
+        mode: Mode,
+        initial_query: Option<&str>,
+    ) -> Result<Self> {
         let dirs = storage::list_ref_dirs(library)?;
         let entries: Vec<Entry> = dirs
             .into_iter()
@@ -685,13 +748,21 @@ impl App {
                 } else {
                     format!("{} et al.", reference.authors[0])
                 };
-                let year = reference.year.map(|y| format!("({})", y)).unwrap_or_default();
+                let year = reference
+                    .year
+                    .map(|y| format!("({})", y))
+                    .unwrap_or_default();
                 let display = [authors, year, reference.title.clone()]
                     .into_iter()
                     .filter(|s| !s.is_empty())
                     .collect::<Vec<_>>()
                     .join("  ");
-                Some(Entry { dir, dir_name, reference, display })
+                Some(Entry {
+                    dir,
+                    dir_name,
+                    reference,
+                    display,
+                })
             })
             .collect();
 
@@ -722,7 +793,7 @@ impl App {
             },
             theme,
             mode,
-            input_mode: InputMode::Search,
+            input_mode: InputMode::Browse,
             should_quit: false,
             pending_output: None,
             tag_filter: None,
@@ -753,7 +824,9 @@ impl App {
 
     fn rebuild_filter(&mut self) {
         let tag_filtered: Vec<usize> = if let Some(ref tag) = self.tag_filter {
-            self.entries.iter().enumerate()
+            self.entries
+                .iter()
+                .enumerate()
                 .filter(|(_, e)| e.reference.tags.iter().any(|t| t == tag))
                 .map(|(i, _)| i)
                 .collect()
@@ -765,11 +838,7 @@ impl App {
             self.filtered_indices = tag_filtered;
             self.apply_sort();
         } else {
-            let pattern = Pattern::parse(
-                &self.filter,
-                CaseMatching::Ignore,
-                Normalization::Smart,
-            );
+            let pattern = Pattern::parse(&self.filter, CaseMatching::Ignore, Normalization::Smart);
             let mut matcher = Matcher::new(Config::DEFAULT);
             let mut buf = Vec::new();
 
@@ -804,11 +873,24 @@ impl App {
                         if s.contains(',') {
                             s.split(',').next().unwrap_or(s).trim().to_lowercase()
                         } else {
-                            s.rsplit_once(' ').map(|(_, l)| l).unwrap_or(s).to_lowercase()
+                            s.rsplit_once(' ')
+                                .map(|(_, l)| l)
+                                .unwrap_or(s)
+                                .to_lowercase()
                         }
                     };
-                    let aa = ea.reference.authors.first().map(|s| last_name(s)).unwrap_or_default();
-                    let ba = eb.reference.authors.first().map(|s| last_name(s)).unwrap_or_default();
+                    let aa = ea
+                        .reference
+                        .authors
+                        .first()
+                        .map(|s| last_name(s))
+                        .unwrap_or_default();
+                    let ba = eb
+                        .reference
+                        .authors
+                        .first()
+                        .map(|s| last_name(s))
+                        .unwrap_or_default();
                     aa.cmp(&ba)
                 }
                 SortMode::Year => {
@@ -816,7 +898,11 @@ impl App {
                     let yb = eb.reference.year.unwrap_or(0);
                     yb.cmp(&ya)
                 }
-                SortMode::Title => ea.reference.title.to_lowercase().cmp(&eb.reference.title.to_lowercase()),
+                SortMode::Title => ea
+                    .reference
+                    .title
+                    .to_lowercase()
+                    .cmp(&eb.reference.title.to_lowercase()),
             }
         });
     }
@@ -896,7 +982,8 @@ impl App {
 
     fn move_to_bottom(&mut self) {
         if !self.filtered_indices.is_empty() {
-            self.list_state.select(Some(self.filtered_indices.len() - 1));
+            self.list_state
+                .select(Some(self.filtered_indices.len() - 1));
             self.preview_scroll = 0;
         }
     }
@@ -915,14 +1002,25 @@ impl App {
                 } else {
                     std::fs::read_dir(&entry.dir)
                         .ok()
-                        .and_then(|rd| rd.flatten().find(|e| {
-                            e.path().extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
-                        }))
+                        .and_then(|rd| {
+                            rd.flatten().find(|e| {
+                                e.path()
+                                    .extension()
+                                    .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
+                            })
+                        })
                         .map(|e| e.path())
                 };
                 match pdf {
-                    Some(p) => { std::process::Command::new(self.config.reader()).arg(&p).spawn()?; }
-                    None => { self.flash = Some(("No PDF available".to_string(), std::time::Instant::now())); }
+                    Some(p) => {
+                        std::process::Command::new(self.config.reader())
+                            .arg(&p)
+                            .spawn()?;
+                    }
+                    None => {
+                        self.flash =
+                            Some(("No PDF available".to_string(), std::time::Instant::now()));
+                    }
                 }
             }
             Mode::Cite { format } => {
@@ -1024,14 +1122,21 @@ impl App {
 
     fn flash_message(&self) -> Option<&str> {
         self.flash.as_ref().and_then(|(msg, t)| {
-            if t.elapsed().as_secs() < 2 { Some(msg.as_str()) } else { None }
+            if t.elapsed().as_secs() < 2 {
+                Some(msg.as_str())
+            } else {
+                None
+            }
         })
     }
 
     fn submit_add(&mut self) {
         let input = match self.add_input.take() {
             Some(s) if !s.trim().is_empty() => s.trim().to_string(),
-            _ => { self.add_input = None; return; }
+            _ => {
+                self.add_input = None;
+                return;
+            }
         };
 
         self.flash = Some(("Adding...".to_string(), std::time::Instant::now()));
@@ -1045,7 +1150,9 @@ impl App {
         match output {
             Ok(o) if o.status.success() => {
                 let stdout = String::from_utf8_lossy(&o.stdout);
-                let msg = stdout.lines().find(|l| l.starts_with("Added:"))
+                let msg = stdout
+                    .lines()
+                    .find(|l| l.starts_with("Added:"))
                     .unwrap_or("Added successfully")
                     .to_string();
                 self.flash = Some((msg, std::time::Instant::now()));
@@ -1067,7 +1174,10 @@ impl App {
         match index::Index::open(&library).and_then(|idx| idx.reindex(&library)) {
             Ok(count) => {
                 self.reload_entries();
-                self.flash = Some((format!("Reindexed {} references", count), std::time::Instant::now()));
+                self.flash = Some((
+                    format!("Reindexed {} references", count),
+                    std::time::Instant::now(),
+                ));
             }
             Err(e) => {
                 self.flash = Some((format!("Reindex error: {}", e), std::time::Instant::now()));
@@ -1110,13 +1220,21 @@ impl App {
                 } else {
                     format!("{} et al.", reference.authors[0])
                 };
-                let year = reference.year.map(|y| format!("({})", y)).unwrap_or_default();
+                let year = reference
+                    .year
+                    .map(|y| format!("({})", y))
+                    .unwrap_or_default();
                 let display = [authors, year, reference.title.clone()]
                     .into_iter()
                     .filter(|s| !s.is_empty())
                     .collect::<Vec<_>>()
                     .join("  ");
-                Some(Entry { dir, dir_name, reference, display })
+                Some(Entry {
+                    dir,
+                    dir_name,
+                    reference,
+                    display,
+                })
             })
             .collect();
 
@@ -1156,12 +1274,13 @@ impl App {
         let pdf = if let Some(f) = entry.reference.files.first() {
             entry.dir.join(f)
         } else {
-            match std::fs::read_dir(&entry.dir)
-                .ok()
-                .and_then(|rd| rd.flatten().find(|e| {
-                    e.path().extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
-                }))
-            {
+            match std::fs::read_dir(&entry.dir).ok().and_then(|rd| {
+                rd.flatten().find(|e| {
+                    e.path()
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
+                })
+            }) {
                 Some(e) => e.path(),
                 None => {
                     self.flash = Some(("No PDF found".to_string(), std::time::Instant::now()));
@@ -1169,14 +1288,23 @@ impl App {
                 }
             }
         };
-        match std::process::Command::new("open").arg("-a").arg("Polaris").arg(&pdf).spawn() {
-            Ok(_) => self.flash = Some(("Opened in Polaris".to_string(), std::time::Instant::now())),
+        match std::process::Command::new("open")
+            .arg("-a")
+            .arg("Polaris")
+            .arg(&pdf)
+            .spawn()
+        {
+            Ok(_) => {
+                self.flash = Some(("Opened in Polaris".to_string(), std::time::Instant::now()))
+            }
             Err(e) => self.flash = Some((format!("Error: {}", e), std::time::Instant::now())),
         }
     }
 
     fn action_enrich_selected(&mut self) {
-        if self.enrich_rx.is_some() { return; }
+        if self.enrich_rx.is_some() {
+            return;
+        }
         let selected = match self.list_state.selected() {
             Some(s) => s,
             None => return,
@@ -1193,7 +1321,11 @@ impl App {
             let result = match enrich_entry(&dir, &reference) {
                 Ok(Some(updated)) => {
                     let diffs = compute_diffs(&reference, &updated);
-                    if diffs.is_empty() { vec![] } else { vec![(idx, updated, diffs)] }
+                    if diffs.is_empty() {
+                        vec![]
+                    } else {
+                        vec![(idx, updated, diffs)]
+                    }
                 }
                 _ => vec![],
             };
@@ -1202,9 +1334,14 @@ impl App {
     }
 
     fn action_enrich_all(&mut self) {
-        if self.enrich_rx.is_some() { return; }
+        if self.enrich_rx.is_some() {
+            return;
+        }
 
-        let work: Vec<(usize, PathBuf, Reference)> = self.entries.iter().enumerate()
+        let work: Vec<(usize, PathBuf, Reference)> = self
+            .entries
+            .iter()
+            .enumerate()
             .filter(|(_, e)| needs_enrich(&e.reference))
             .map(|(i, e)| (i, e.dir.clone(), e.reference.clone()))
             .collect();
@@ -1214,7 +1351,10 @@ impl App {
             return;
         }
 
-        self.flash = Some((format!("Fetching {} entries...", work.len()), std::time::Instant::now()));
+        self.flash = Some((
+            format!("Fetching {} entries...", work.len()),
+            std::time::Instant::now(),
+        ));
         let (tx, rx) = mpsc::channel();
         self.enrich_rx = Some(rx);
 
@@ -1261,18 +1401,17 @@ impl App {
         };
         if ep.applied > 0 || ep.skipped > 0 {
             self.flash = Some((
-                format!("Enriched {}, skipped {}", ep.applied, ep.skipped + ep.batch_queue.len() + 1),
+                format!(
+                    "Enriched {}, skipped {}",
+                    ep.applied,
+                    ep.skipped + ep.batch_queue.len() + 1
+                ),
                 std::time::Instant::now(),
             ));
         }
     }
 
-    fn advance_enrich_queue(
-        &mut self,
-        mut queue: Vec<EnrichItem>,
-        applied: usize,
-        skipped: usize,
-    ) {
+    fn advance_enrich_queue(&mut self, mut queue: Vec<EnrichItem>, applied: usize, skipped: usize) {
         if queue.is_empty() {
             let msg = format!("Enriched {}, skipped {}", applied, skipped);
             self.flash = Some((msg, std::time::Instant::now()));
@@ -1326,18 +1465,34 @@ fn compute_diffs(old: &Reference, new: &Reference) -> Vec<(String, String, Strin
         diffs.push(("year".into(), o, n));
     }
     if old.authors != new.authors {
-        let o = if old.authors.is_empty() { String::new() } else { old.authors.join(", ") };
+        let o = if old.authors.is_empty() {
+            String::new()
+        } else {
+            old.authors.join(", ")
+        };
         let n = new.authors.join(", ");
         diffs.push(("authors".into(), o, n));
     }
     if old.doi != new.doi {
-        diffs.push(("doi".into(), old.doi.clone().unwrap_or_default(), new.doi.clone().unwrap_or_default()));
+        diffs.push((
+            "doi".into(),
+            old.doi.clone().unwrap_or_default(),
+            new.doi.clone().unwrap_or_default(),
+        ));
     }
     if old.arxiv != new.arxiv {
-        diffs.push(("arxiv".into(), old.arxiv.clone().unwrap_or_default(), new.arxiv.clone().unwrap_or_default()));
+        diffs.push((
+            "arxiv".into(),
+            old.arxiv.clone().unwrap_or_default(),
+            new.arxiv.clone().unwrap_or_default(),
+        ));
     }
     if old.journal != new.journal {
-        diffs.push(("journal".into(), old.journal.clone().unwrap_or_default(), new.journal.clone().unwrap_or_default()));
+        diffs.push((
+            "journal".into(),
+            old.journal.clone().unwrap_or_default(),
+            new.journal.clone().unwrap_or_default(),
+        ));
     }
     if old.r#abstract != new.r#abstract && old.r#abstract.is_none() {
         diffs.push(("abstract".into(), String::new(), "(fetched)".into()));
@@ -1347,16 +1502,20 @@ fn compute_diffs(old: &Reference, new: &Reference) -> Vec<(String, String, Strin
 }
 
 fn needs_enrich(r: &Reference) -> bool {
-    r.year.is_none() || r.year == Some(0) || r.authors.is_empty()
-        || r.r#abstract.is_none() || r.doi.is_none()
+    r.year.is_none()
+        || r.year == Some(0)
+        || r.authors.is_empty()
+        || r.r#abstract.is_none()
+        || r.doi.is_none()
 }
 
 fn enrich_entry(dir: &Path, r: &Reference) -> Result<Option<Reference>> {
     use crate::fetch;
 
-    let arxiv_id = r.arxiv.clone().or_else(|| {
-        r.files.iter().find_map(|f| fetch::detect_arxiv_id(f))
-    });
+    let arxiv_id = r
+        .arxiv
+        .clone()
+        .or_else(|| r.files.iter().find_map(|f| fetch::detect_arxiv_id(f)));
 
     let fetched = if let Some(ref id) = arxiv_id {
         fetch::fetch_arxiv(id).ok()
@@ -1403,6 +1562,28 @@ fn enrich_entry(dir: &Path, r: &Reference) -> Result<Option<Reference>> {
     Ok(Some(updated))
 }
 
+fn is_importable(input: &str) -> bool {
+    use crate::fetch;
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if fetch::detect_arxiv_id(trimmed).is_some() {
+        return true;
+    }
+    if fetch::detect_doi(trimmed).is_some() {
+        return true;
+    }
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return true;
+    }
+    let path = std::path::PathBuf::from(trimmed);
+    if path.exists() {
+        return true;
+    }
+    false
+}
+
 fn draw(f: &mut Frame, app: &mut App) {
     let t = &app.theme;
     let s_text = Style::default().fg(t.text);
@@ -1420,29 +1601,20 @@ fn draw(f: &mut Frame, app: &mut App) {
 
     let (left_col, preview_area) = match resolved {
         ResolvedLayout::Wide => {
-            let chunks = Layout::horizontal([
-                Constraint::Percentage(50),
-                Constraint::Percentage(50),
-            ])
-            .split(area);
+            let chunks =
+                Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                    .split(area);
             (chunks[0], Some(chunks[1]))
         }
         ResolvedLayout::Tall => {
-            let chunks = Layout::vertical([
-                Constraint::Percentage(50),
-                Constraint::Percentage(50),
-            ])
-            .split(area);
+            let chunks = Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
             (chunks[0], Some(chunks[1]))
         }
     };
 
     // Split left column: search bar (3 rows) + list
-    let left_parts = Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Min(1),
-    ])
-    .split(left_col);
+    let left_parts = Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).split(left_col);
     let search_area = left_parts[0];
     let list_area = left_parts[1];
 
@@ -1489,12 +1661,18 @@ fn draw(f: &mut Frame, app: &mut App) {
     let count_str = format!(" {}/{} ", app.filtered_indices.len(), app.entries.len());
     let mode_indicator = match app.input_mode {
         InputMode::Browse => Span::styled(
-            " BRW ",
-            Style::default().fg(t.status_fg).bg(t.normal_bg).add_modifier(Modifier::BOLD),
+            " BROWSE ",
+            Style::default()
+                .fg(t.status_fg)
+                .bg(t.normal_bg)
+                .add_modifier(Modifier::BOLD),
         ),
         InputMode::Search => Span::styled(
-            " SRC ",
-            Style::default().fg(t.status_fg).bg(t.insert_bg).add_modifier(Modifier::BOLD),
+            " SEARCH ",
+            Style::default()
+                .fg(t.status_fg)
+                .bg(t.insert_bg)
+                .add_modifier(Modifier::BOLD),
         ),
     };
     let mode_hint = match (app.input_mode, &app.mode) {
@@ -1502,10 +1680,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         (InputMode::Browse, Mode::Browse) => " / search  c clear  q quit ",
         (InputMode::Browse, Mode::Cite { .. }) => " / search  c clear  q quit ",
     };
-    let mut bottom_spans = vec![
-        mode_indicator,
-        Span::styled(count_str, s_muted),
-    ];
+    let mut bottom_spans = vec![mode_indicator, Span::styled(count_str, s_muted)];
     if let Some(flash) = app.flash_message() {
         bottom_spans.push(Span::styled(format!(" {} ", flash), s_hl));
     } else {
@@ -1514,7 +1689,10 @@ fn draw(f: &mut Frame, app: &mut App) {
     let bottom_left = Line::from(bottom_spans);
 
     let sort_right = if app.sort_mode != SortMode::Name && app.filter.is_empty() {
-        Line::from(Span::styled(format!(" sort: {} ", app.sort_mode.label()), s_hl))
+        Line::from(Span::styled(
+            format!(" sort: {} ", app.sort_mode.label()),
+            s_hl,
+        ))
     } else {
         Line::default()
     };
@@ -1535,46 +1713,96 @@ fn draw(f: &mut Frame, app: &mut App) {
     let prefix_width = 3 + 6 + 14; // highlight_symbol + year + author
     let title_max = list_width.saturating_sub(prefix_width);
 
-    let items: Vec<ListItem> = app
-        .filtered_indices
-        .iter()
-        .map(|&idx| {
-            let r = &app.entries[idx].reference;
+    if app.filtered_indices.is_empty() {
+        let is_query_importable = is_importable(&app.filter);
+        let msg = if is_query_importable {
+            vec![
+                Line::from(Span::styled("No papers match this query.", s_dim)),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "This query looks like an importable source!",
+                    s_hl.add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("Press ", s_dim),
+                    Span::styled("Tab", s_hl.add_modifier(Modifier::BOLD)),
+                    Span::styled(" or ", s_dim),
+                    Span::styled("Ctrl-A", s_hl.add_modifier(Modifier::BOLD)),
+                    Span::styled(" to load it into the Add bar.", s_dim),
+                ]),
+            ]
+        } else {
+            vec![Line::from(Span::styled(
+                "No papers match this query.",
+                s_dim,
+            ))]
+        };
 
-            let year_str = r.year
-                .map(|y| format!(" {} ", y))
-                .unwrap_or_else(|| "      ".to_string());
+        let num_lines = msg.len();
+        let paragraph = Paragraph::new(msg)
+            .alignment(ratatui::layout::Alignment::Center)
+            .wrap(Wrap { trim: true });
 
-            let author_str = r.authors.first()
-                .map(|a| {
-                    let last = if let Some((last, _)) = a.rsplit_once(',') {
-                        last.trim()
-                    } else {
-                        a.split_whitespace().last().unwrap_or(a)
-                    };
-                    format!("{:>12}  ", truncate_str(last, 12))
-                })
-                .unwrap_or_else(|| "              ".to_string());
+        // Center vertically inside list_inner
+        let vertical_margin = (list_inner.height as usize).saturating_sub(num_lines) / 2;
+        let hint_area = Layout::vertical([
+            Constraint::Length(vertical_margin as u16),
+            Constraint::Min(num_lines as u16),
+        ])
+        .split(list_inner)[1];
 
-            let title = truncate_ellipsis(&r.title, title_max);
+        f.render_widget(paragraph, hint_area);
+    } else {
+        let items: Vec<ListItem> = app
+            .filtered_indices
+            .iter()
+            .map(|&idx| {
+                let r = &app.entries[idx].reference;
 
-            ListItem::new(Line::from(vec![
-                Span::styled(year_str, s_date),
-                Span::styled(author_str, s_author),
-                Span::styled(title, s_text),
-            ]))
-        })
-        .collect();
+                let year_str = r
+                    .year
+                    .map(|y| format!(" {} ", y))
+                    .unwrap_or_else(|| "      ".to_string());
 
-    let list = List::new(items)
-        .highlight_style(Style::default().bg(t.selection).add_modifier(Modifier::BOLD))
-        .highlight_symbol(" > ");
+                let author_str = r
+                    .authors
+                    .first()
+                    .map(|a| {
+                        let last = if let Some((last, _)) = a.rsplit_once(',') {
+                            last.trim()
+                        } else {
+                            a.split_whitespace().last().unwrap_or(a)
+                        };
+                        format!("{:>12}  ", truncate_str(last, 12))
+                    })
+                    .unwrap_or_else(|| "              ".to_string());
 
-    f.render_stateful_widget(list, list_inner, &mut app.list_state);
+                let title = truncate_ellipsis(&r.title, title_max);
+
+                ListItem::new(Line::from(vec![
+                    Span::styled(year_str, s_date),
+                    Span::styled(author_str, s_author),
+                    Span::styled(title, s_text),
+                ]))
+            })
+            .collect();
+
+        let list = List::new(items)
+            .highlight_style(
+                Style::default()
+                    .bg(t.selection)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol(" > ");
+
+        f.render_stateful_widget(list, list_inner, &mut app.list_state);
+    }
 
     // Preview pane
     if let Some(pane_area) = preview_area {
-        let preview_title = app.selected_entry()
+        let preview_title = app
+            .selected_entry()
             .map(|e| Line::from(Span::styled(format!(" {} ", e.dir_name), s_hl)))
             .unwrap_or_default();
 
@@ -1587,7 +1815,15 @@ fn draw(f: &mut Frame, app: &mut App) {
         let content_area = preview_block.inner(pane_area);
         f.render_widget(preview_block, pane_area);
 
-        let styles = Styles { text: s_text, dim: s_dim, muted: s_muted, author: s_author, highlight: s_hl, link: s_link, date: s_date };
+        let styles = Styles {
+            text: s_text,
+            dim: s_dim,
+            muted: s_muted,
+            author: s_author,
+            highlight: s_hl,
+            link: s_link,
+            date: s_date,
+        };
         draw_preview(f, app, content_area, &styles);
     }
 
@@ -1632,7 +1868,9 @@ fn draw(f: &mut Frame, app: &mut App) {
         popup.clamp_scroll(max_visible);
 
         let inner_width = popup_chunks[1].width as usize;
-        let lines: Vec<Line> = popup.filtered_tags.iter()
+        let lines: Vec<Line> = popup
+            .filtered_tags
+            .iter()
             .enumerate()
             .skip(popup.scroll)
             .take(max_visible)
@@ -1640,7 +1878,10 @@ fn draw(f: &mut Frame, app: &mut App) {
                 let is_selected = i == popup.selected;
                 let prefix = if is_selected { " > " } else { "   " };
                 let style = if is_selected {
-                    Style::default().fg(t.text).bg(t.selection).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(t.text)
+                        .bg(t.selection)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     s_dim
                 };
@@ -1687,15 +1928,14 @@ fn draw(f: &mut Frame, app: &mut App) {
         let inner = block.inner(popup_area);
         f.render_widget(block, popup_area);
 
-        let popup_chunks = Layout::vertical([
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
+        let popup_chunks =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(inner);
 
         let scroll = popup.selected.saturating_sub(max_visible - 1);
 
-        let lines: Vec<Line> = popup.names.iter()
+        let lines: Vec<Line> = popup
+            .names
+            .iter()
             .enumerate()
             .skip(scroll)
             .take(max_visible)
@@ -1703,7 +1943,10 @@ fn draw(f: &mut Frame, app: &mut App) {
                 let is_selected = i == popup.selected;
                 let prefix = if is_selected { " > " } else { "   " };
                 let style = if is_selected {
-                    Style::default().fg(t.text).bg(t.selection).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(t.text)
+                        .bg(t.selection)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     s_dim
                 };
@@ -1712,7 +1955,10 @@ fn draw(f: &mut Frame, app: &mut App) {
             .collect();
         f.render_widget(Paragraph::new(lines), popup_chunks[0]);
 
-        let hint = Line::from(Span::styled(" j/k preview  enter select  esc cancel", s_muted));
+        let hint = Line::from(Span::styled(
+            " j/k preview  enter select  esc cancel",
+            s_muted,
+        ));
         f.render_widget(Paragraph::new(hint), popup_chunks[1]);
     }
 
@@ -1764,10 +2010,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         let inner = block.inner(popup_area);
         f.render_widget(block, popup_area);
 
-        let popup_chunks = Layout::vertical([
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ]).split(inner);
+        let popup_chunks =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(inner);
 
         f.render_widget(
             Paragraph::new(lines)
@@ -1815,10 +2059,7 @@ fn draw(f: &mut Frame, app: &mut App) {
             lines.push(Line::from(Span::styled(format!(" {}", issue), s_dim)));
         }
 
-        f.render_widget(
-            Paragraph::new(lines).scroll((vp.scroll, 0)),
-            inner,
-        );
+        f.render_widget(Paragraph::new(lines).scroll((vp.scroll, 0)), inner);
     }
 
     // Help popup
@@ -1874,14 +2115,12 @@ fn draw(f: &mut Frame, app: &mut App) {
         let inner = block.inner(popup_area);
         f.render_widget(block, popup_area);
 
-        let popup_chunks = Layout::vertical([
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
+        let popup_chunks =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(inner);
 
         let key_width = 10;
-        let lines: Vec<Line> = help_lines.iter()
+        let lines: Vec<Line> = help_lines
+            .iter()
             .map(|(key, desc)| {
                 if key.is_empty() {
                     Line::from(Span::styled(
@@ -1913,12 +2152,7 @@ struct Styles {
     date: Style,
 }
 
-fn draw_preview(
-    f: &mut Frame,
-    app: &App,
-    area: ratatui::layout::Rect,
-    s: &Styles,
-) {
+fn draw_preview(f: &mut Frame, app: &App, area: ratatui::layout::Rect, s: &Styles) {
     let s_text = s.text;
     let s_dim = s.dim;
     let s_muted = s.muted;
@@ -1990,10 +2224,7 @@ fn draw_preview(
             area,
         );
     } else {
-        f.render_widget(
-            Paragraph::new(Span::styled("No selection", s_muted)),
-            area,
-        );
+        f.render_widget(Paragraph::new(Span::styled("No selection", s_muted)), area);
     }
 }
 
@@ -2044,7 +2275,8 @@ fn run_dedup(terminal: &mut Term, app: &mut App) -> Result<()> {
 
             if let Event::Key(key) = event::read()? {
                 match (key.code, key.modifiers) {
-                    (KeyCode::Char('q'), _) | (KeyCode::Esc, _)
+                    (KeyCode::Char('q'), _)
+                    | (KeyCode::Esc, _)
                     | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
                         let msg = if removed > 0 {
                             format!("Dedup: removed {}", removed)
@@ -2099,7 +2331,11 @@ struct DedupEntry {
 
 impl DedupEntry {
     fn from_path(path: &Path) -> Self {
-        let dir_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let dir_name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         let reference = metadata::read_info(path).unwrap_or_else(|_| Reference {
             title: "Unknown".to_string(),
             authors: vec![],
@@ -2112,24 +2348,55 @@ impl DedupEntry {
             r#abstract: None,
         });
         let score = metadata_score_ref(&reference);
-        let has_pdf = path.read_dir().map(|rd| rd.flatten().any(|e| {
-            e.path().extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
-        })).unwrap_or(false);
-        Self { path: path.to_path_buf(), dir_name, reference, score, has_pdf }
+        let has_pdf = path
+            .read_dir()
+            .map(|rd| {
+                rd.flatten().any(|e| {
+                    e.path()
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
+                })
+            })
+            .unwrap_or(false);
+        Self {
+            path: path.to_path_buf(),
+            dir_name,
+            reference,
+            score,
+            has_pdf,
+        }
     }
 }
 
 fn metadata_score_ref(r: &Reference) -> u32 {
     let mut score = 0u32;
-    if !r.title.is_empty() { score += 1; }
-    if !r.authors.is_empty() { score += 1; }
-    if r.year.is_some() && r.year != Some(0) { score += 1; }
-    if r.doi.is_some() { score += 1; }
-    if r.arxiv.is_some() { score += 1; }
-    if r.journal.is_some() { score += 1; }
-    if !r.tags.is_empty() { score += 1; }
-    if !r.files.is_empty() { score += 1; }
-    if r.r#abstract.is_some() { score += 1; }
+    if !r.title.is_empty() {
+        score += 1;
+    }
+    if !r.authors.is_empty() {
+        score += 1;
+    }
+    if r.year.is_some() && r.year != Some(0) {
+        score += 1;
+    }
+    if r.doi.is_some() {
+        score += 1;
+    }
+    if r.arxiv.is_some() {
+        score += 1;
+    }
+    if r.journal.is_some() {
+        score += 1;
+    }
+    if !r.tags.is_empty() {
+        score += 1;
+    }
+    if !r.files.is_empty() {
+        score += 1;
+    }
+    if r.r#abstract.is_some() {
+        score += 1;
+    }
     score
 }
 
@@ -2148,7 +2415,10 @@ fn find_duplicate_groups(library: &Path) -> Result<Vec<Vec<PathBuf>>> {
 
         let normalized_title = r.title.trim().to_lowercase();
         if !normalized_title.is_empty() {
-            by_title.entry(normalized_title).or_default().push(dir.clone());
+            by_title
+                .entry(normalized_title)
+                .or_default()
+                .push(dir.clone());
         }
 
         if let Some(ref doi) = r.doi {
@@ -2164,7 +2434,11 @@ fn find_duplicate_groups(library: &Path) -> Result<Vec<Vec<PathBuf>>> {
 
     for paths in by_title.values() {
         if paths.len() > 1 {
-            let group: Vec<_> = paths.iter().filter(|p| !seen.contains(*p)).cloned().collect();
+            let group: Vec<_> = paths
+                .iter()
+                .filter(|p| !seen.contains(*p))
+                .cloned()
+                .collect();
             if group.len() > 1 {
                 for p in &group {
                     seen.insert(p.clone());
@@ -2176,7 +2450,11 @@ fn find_duplicate_groups(library: &Path) -> Result<Vec<Vec<PathBuf>>> {
 
     for paths in by_doi.values() {
         if paths.len() > 1 {
-            let group: Vec<_> = paths.iter().filter(|p| !seen.contains(*p)).cloned().collect();
+            let group: Vec<_> = paths
+                .iter()
+                .filter(|p| !seen.contains(*p))
+                .cloned()
+                .collect();
             if group.len() > 1 {
                 for p in &group {
                     seen.insert(p.clone());
@@ -2189,7 +2467,14 @@ fn find_duplicate_groups(library: &Path) -> Result<Vec<Vec<PathBuf>>> {
     Ok(groups)
 }
 
-fn draw_dedup(f: &mut Frame, theme: &Theme, entries: &[DedupEntry], selected: usize, group_idx: usize, total_groups: usize) {
+fn draw_dedup(
+    f: &mut Frame,
+    theme: &Theme,
+    entries: &[DedupEntry],
+    selected: usize,
+    group_idx: usize,
+    total_groups: usize,
+) {
     let t = theme;
     let s_text = Style::default().fg(t.text);
     let s_dim = Style::default().fg(t.text_dim);
@@ -2199,33 +2484,43 @@ fn draw_dedup(f: &mut Frame, theme: &Theme, entries: &[DedupEntry], selected: us
 
     let area = f.area();
 
-    let chunks = Layout::horizontal([
-        Constraint::Percentage(50),
-        Constraint::Percentage(50),
-    ]).split(area);
+    let chunks =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).split(area);
 
     let left = Layout::vertical([
         Constraint::Length(2),
         Constraint::Min(1),
         Constraint::Length(2),
-    ]).split(chunks[0]);
+    ])
+    .split(chunks[0]);
 
     // Header
     let title = &entries[0].reference.title;
     let header = Line::from(vec![
         Span::styled(format!(" [{}/{}] ", group_idx + 1, total_groups), s_dim),
-        Span::styled(truncate_ellipsis(title, left[0].width.saturating_sub(12) as usize), s_text),
+        Span::styled(
+            truncate_ellipsis(title, left[0].width.saturating_sub(12) as usize),
+            s_text,
+        ),
     ]);
     f.render_widget(Paragraph::new(header), left[0]);
 
     // List of entries
-    let items: Vec<ListItem> = entries.iter().enumerate().map(|(i, e)| {
-        let marker = if i == selected { "> " } else { "  " };
-        let pdf_indicator = if e.has_pdf { " [PDF]" } else { "" };
-        let label = format!("{}{}{} ({}/9)", marker, e.dir_name, pdf_indicator, e.score);
-        let style = if i == selected { s_author.add_modifier(Modifier::BOLD) } else { s_dim };
-        ListItem::new(Span::styled(label, style))
-    }).collect();
+    let items: Vec<ListItem> = entries
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            let marker = if i == selected { "> " } else { "  " };
+            let pdf_indicator = if e.has_pdf { " [PDF]" } else { "" };
+            let label = format!("{}{}{} ({}/9)", marker, e.dir_name, pdf_indicator, e.score);
+            let style = if i == selected {
+                s_author.add_modifier(Modifier::BOLD)
+            } else {
+                s_dim
+            };
+            ListItem::new(Span::styled(label, style))
+        })
+        .collect();
 
     f.render_widget(
         List::new(items).block(Block::default().borders(Borders::TOP).border_style(s_muted)),
@@ -2248,7 +2543,10 @@ fn draw_dedup(f: &mut Frame, theme: &Theme, entries: &[DedupEntry], selected: us
     let r = &entry.reference;
     let mut lines: Vec<Line> = Vec::new();
 
-    lines.push(Line::from(Span::styled(&r.title, s_text.add_modifier(Modifier::BOLD))));
+    lines.push(Line::from(Span::styled(
+        &r.title,
+        s_text.add_modifier(Modifier::BOLD),
+    )));
     lines.push(Line::default());
 
     if !r.authors.is_empty() {
@@ -2294,7 +2592,11 @@ fn draw_dedup(f: &mut Frame, theme: &Theme, entries: &[DedupEntry], selected: us
 
     f.render_widget(
         Paragraph::new(lines)
-            .block(Block::default().borders(Borders::LEFT).border_style(s_muted))
+            .block(
+                Block::default()
+                    .borders(Borders::LEFT)
+                    .border_style(s_muted),
+            )
             .wrap(Wrap { trim: false }),
         chunks[1],
     );

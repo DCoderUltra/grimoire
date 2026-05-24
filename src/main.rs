@@ -103,7 +103,11 @@ pub fn cmd_add(library: &Path, input: &str) -> Result<()> {
 
 pub fn index_reference(library: &Path, ref_dir: &Path, reference: &crate::model::Reference) {
     if let Ok(idx) = index::Index::open(library) {
-        let dir_name = ref_dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let dir_name = ref_dir
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         let pdf_path = reference.files.first().map(|f| ref_dir.join(f));
         let fulltext = pdf_path
             .as_ref()
@@ -153,13 +157,15 @@ fn add_from_file(library: &Path, path: &str) -> Result<()> {
         .with_context(|| format!("File not found: {}", path))?;
 
     anyhow::ensure!(
-        path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")),
+        path.extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("pdf")),
         "Not a PDF file and not a recognized arXiv ID or DOI"
     );
 
     let mut reference = metadata::extract_from_pdf(&path)?;
 
-    let arxiv_id = path.file_stem()
+    let arxiv_id = path
+        .file_stem()
         .and_then(|s| fetch::detect_arxiv_id(&s.to_string_lossy()));
     if let Some(ref id) = arxiv_id {
         println!("Detected arXiv ID: {} — fetching metadata...", id);
@@ -187,8 +193,8 @@ fn add_from_file(library: &Path, path: &str) -> Result<()> {
 fn add_from_url(library: &Path, url: &str) -> Result<()> {
     println!("Downloading PDF from URL...");
 
-    let response = reqwest::blocking::get(url)
-        .with_context(|| format!("Failed to download: {}", url))?;
+    let response =
+        reqwest::blocking::get(url).with_context(|| format!("Failed to download: {}", url))?;
 
     let content_type = response
         .headers()
@@ -197,7 +203,10 @@ fn add_from_url(library: &Path, url: &str) -> Result<()> {
         .unwrap_or("");
 
     if !content_type.contains("pdf") && !url.ends_with(".pdf") {
-        eprintln!("Warning: URL may not be a PDF (content-type: {})", content_type);
+        eprintln!(
+            "Warning: URL may not be a PDF (content-type: {})",
+            content_type
+        );
     }
 
     let filename = url

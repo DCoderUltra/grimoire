@@ -72,7 +72,10 @@ fn make_dir_name(reference: &Reference) -> String {
         .split_whitespace()
         .find(|w| {
             let lower = w.to_lowercase();
-            !matches!(lower.as_str(), "a" | "an" | "the" | "on" | "of" | "for" | "in" | "to" | "and" | "with")
+            !matches!(
+                lower.as_str(),
+                "a" | "an" | "the" | "on" | "of" | "for" | "in" | "to" | "and" | "with"
+            )
         })
         .unwrap_or("untitled");
 

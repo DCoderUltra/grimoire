@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 use crate::metadata;
 use crate::storage;
@@ -33,7 +33,7 @@ impl Index {
                  DROP TRIGGER IF EXISTS reference_ad;
                  DROP TRIGGER IF EXISTS reference_au;
                  DROP TABLE IF EXISTS reference_fts;
-                 DROP TABLE IF EXISTS reference;"
+                 DROP TABLE IF EXISTS reference;",
             )?;
         }
 
@@ -91,10 +91,13 @@ impl Index {
                 Ok(r) => r,
                 Err(_) => continue,
             };
-            let dir_name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let dir_name = dir
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
 
-            let fulltext = find_pdf(dir, &reference)
-                .and_then(|p| metadata::extract_pdf_text(&p));
+            let fulltext = find_pdf(dir, &reference).and_then(|p| metadata::extract_pdf_text(&p));
 
             tx.execute(
                 "INSERT INTO reference (dir_name, title, authors, year, doi, arxiv, journal, tags, abstract_text, files, fulltext)
@@ -127,7 +130,12 @@ impl Index {
         self.upsert_with_fulltext(dir_name, r, None)
     }
 
-    pub fn upsert_with_fulltext(&self, dir_name: &str, r: &crate::model::Reference, fulltext: Option<&str>) -> Result<()> {
+    pub fn upsert_with_fulltext(
+        &self,
+        dir_name: &str,
+        r: &crate::model::Reference,
+        fulltext: Option<&str>,
+    ) -> Result<()> {
         self.conn.execute(
             "INSERT INTO reference (dir_name, title, authors, year, doi, arxiv, journal, tags, abstract_text, files, fulltext)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
@@ -165,7 +173,7 @@ impl Index {
              JOIN reference r ON r.rowid = fts.rowid
              WHERE reference_fts MATCH ?1
              ORDER BY rank
-             LIMIT 50"
+             LIMIT 50",
         )?;
 
         let hits = stmt.query_map(params![fts_query], |row| {
@@ -195,7 +203,9 @@ fn find_pdf(dir: &Path, r: &crate::model::Reference) -> Option<std::path::PathBu
     }
     std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
         let p = e.path();
-        if p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf")) {
+        if p.extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
+        {
             Some(p)
         } else {
             None

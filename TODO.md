@@ -18,6 +18,7 @@
 
 ## Done
 
+- [x] TUI Refined Modal Coexistence: search fallback prompts and seamless Tab/Alt-A toggle between Search and Add modes #improvement
 - [x] `carina tag` command: `tag list`, `tag add`, `tag rm` #feature
 - [x] PDF full-text indexing into FTS5 on `reindex` and `add` #feature
 - [x] URL import: `carina add <url>` downloads PDF and imports #feature
