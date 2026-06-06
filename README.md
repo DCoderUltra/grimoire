@@ -44,7 +44,7 @@ grimoire validate --fix           # auto-fix issues (rename temp files, remove j
 | `y` | Copy BibTeX |
 | `o` | Open DOI / arXiv in browser |
 | `p` | Open PDF in Polaris |
-| `a` | Add paper (path, DOI, arXiv, URL) |
+| `a` | Add paper (path, DOI, arXiv ID, URL) |
 | `r` | Enrich selected (fetch metadata) |
 | `R` | Enrich all with missing fields |
 | `s` | Cycle sort (name/author/year/title) |
